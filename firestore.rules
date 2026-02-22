@@ -1,70 +1,19 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Helper function to check if user is authenticated
-    function isAuthenticated() {
-      return request.auth != null;
-    }
 
-    // Helper to check for specific admin roles
-    function isMasterAdmin() {
-      return isAuthenticated() && request.auth.token.email == 'admin@njmakeup.com';
-    }
-
-    function isFittingAdmin() {
-      return isAuthenticated() && request.auth.token.email == 'admin2@njmakeup.com';
-    }
-
-    function isAnyAdmin() {
-      return isMasterAdmin() || isFittingAdmin();
-    }
-
-    // Global settings (website content, etc.)
-    // Public can read, only admins can modify
-    match /settings/{document=**} {
-      allow read: if true;
-      allow write: if isAnyAdmin();
-    }
-
-    // Admin profiles stored in "users" collection
-    // Only admins can read/write user docs
-    match /users/{document=**} {
-      allow read, write: if isAnyAdmin();
-    }
-
-    // Catalog categories used for organizing items
-    // Public can read, only admins can manage
-    match /categories/{document=**} {
-      allow read: if true;
-      allow write: if isAnyAdmin();
-    }
-
-    // Catalog: Public can read, All Admins can write
-    match /catalog/{document=**} {
-      allow read: if true;
-      allow write: if isAnyAdmin();
-    }
-
-    // Bookings: Public can create, All Admins can read/update/delete
-    match /bookings/{document=**} {
-      allow create: if true;
-      allow read, update, delete: if isAnyAdmin();
-    }
-
-    // Orders: ONLY Master Admin can see financial data
-    match /orders/{document=**} {
-      allow read, write: if isMasterAdmin();
-    }
-    
-    // Team & Packages: Public read, ONLY Master Admin can modify
-    match /team/{document=**} {
-      allow read: if true;
-      allow write: if isMasterAdmin();
-    }
-
-    match /packages/{document=**} {
-      allow read: if true;
-      allow write: if isMasterAdmin();
+    // This rule allows anyone with your Firestore database reference to view, edit,
+    // and delete all data in your Firestore database. It is useful for getting
+    // started, but it is configured to expire after 30 days because it
+    // leaves your app open to attackers. At that time, all client
+    // requests to your Firestore database will be denied.
+    //
+    // Make sure to write security rules for your app before that time, or else
+    // all client requests to your Firestore database will be denied until you Update
+    // your rules
+    match /{document=**} {
+      allow read, write: if request.time < timestamp.date(2026, 3, 12);
     }
   }
 }

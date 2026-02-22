@@ -62,6 +62,7 @@ export interface Booking {
   notes?: string;
   payments?: Payment[];
   packagePrice?: number;
+  lastUpdatedBy?: string;
 }
 
 export interface Order {
@@ -74,6 +75,7 @@ export interface Order {
   items: string[];
   notes?: string;
   createdAt: string;
+  lastUpdatedBy?: string;
 }
 
 export interface TeamMember {

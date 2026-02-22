@@ -14,8 +14,10 @@ import { fetchPackages } from '../services/packageService';
 import { CatalogItem, Category, Package as PackageType } from '../types';
 import GoogleDrivePicker from '../components/GoogleDrivePicker';
 import { getStableImageUrl, isGoogleDriveImageUrl } from '../services/googleDrive';
+import { useToast } from '../components/Toast';
 
 const AdminInventory: React.FC = () => {
+  const toast = useToast();
   const [items, setItems] = useState<CatalogItem[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [packages, setPackages] = useState<PackageType[]>([]);
@@ -93,7 +95,7 @@ const AdminInventory: React.FC = () => {
 
   const handleSaveItem = async () => {
     if (!itemForm.title || !itemForm.category || !itemForm.imageUrl) {
-      alert('Please fill in all required fields');
+      toast.warning('Please fill in all required fields');
       return;
     }
 
@@ -101,14 +103,16 @@ const AdminInventory: React.FC = () => {
     try {
       if (showItemModal === 'edit' && selectedItem) {
         await updateCatalogItem(selectedItem.id, itemForm);
+        toast.success('Item updated successfully');
       } else {
         await addCatalogItem(itemForm);
+        toast.success('Item added successfully');
       }
       await loadData();
       setShowItemModal(null);
     } catch (error) {
       console.error('Error saving item:', error);
-      alert('Error saving item');
+      toast.error('Error saving item');
     } finally {
       setIsLoading(false);
     }
@@ -120,9 +124,10 @@ const AdminInventory: React.FC = () => {
       try {
         await deleteCatalogItem(id);
         await loadData();
+        toast.success('Item deleted successfully');
       } catch (error) {
         console.error('Error deleting item:', error);
-        alert('Error deleting item');
+        toast.error('Error deleting item');
       }
     }
   };
@@ -172,9 +177,10 @@ const AdminInventory: React.FC = () => {
       await loadData();
       setNewCatName('');
       setNewCatOrder(0);
+      toast.success('Category added successfully');
     } catch (error) {
       console.error('Error adding category:', error);
-      alert('Error adding category');
+      toast.error('Error adding category');
     }
   };
 
@@ -183,9 +189,10 @@ const AdminInventory: React.FC = () => {
       try {
         await deleteCategory(id);
         await loadData();
+        toast.success('Category deleted successfully');
       } catch (error) {
         console.error('Error deleting category:', error);
-        alert('Error deleting category');
+        toast.error('Error deleting category');
       }
     }
   };
@@ -574,9 +581,10 @@ const AdminInventory: React.FC = () => {
                               try {
                                 await updateCategoryOrder(cat.id, newOrder);
                                 await loadData();
+                                toast.success('Category order updated');
                               } catch (error) {
                                 console.error('Error updating category order:', error);
-                                alert('Error updating category order');
+                                toast.error('Error updating category order');
                               }
                             }}
                             className="w-20 px-3 py-2 bg-white border border-zinc-200 rounded-lg text-sm font-bold"

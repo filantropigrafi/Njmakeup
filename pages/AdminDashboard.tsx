@@ -6,11 +6,11 @@ import {
   CreditCard, Loader2, Sparkles, Clock, RefreshCw
 } from 'lucide-react';
 import { fetchOrders } from '../services/orderService';
-import { fetchBookings } from '../services/bookingService';
+import { fetchBookings, fetchConfirmedBookings, calculateTotalPaid, getPaymentStatus } from '../services/bookingService';
 import { fetchCatalog } from '../services/inventoryService';
+import { fetchPackages } from '../services/packageService';
 import { formatDate } from '../services/whatsappService';
-import { Order, Booking, CatalogItem, User } from '../types';
-import { GlobalSeeder } from '../components/GlobalSeeder';
+import { Order, Booking, CatalogItem, User, Package } from '../types';
 
 interface DashboardProps {
   user: User | null;
@@ -20,7 +20,9 @@ const AdminDashboard: React.FC<DashboardProps> = ({ user }) => {
   const [data, setData] = useState({
     orders: [] as Order[],
     bookings: [] as Booking[],
+    confirmedBookings: [] as Booking[],
     catalog: [] as CatalogItem[],
+    packages: [] as Package[],
     isLoading: true
   });
 
@@ -30,12 +32,21 @@ const AdminDashboard: React.FC<DashboardProps> = ({ user }) => {
 
   const loadDashboardData = async () => {
     setData(prev => ({ ...prev, isLoading: true }));
-    const [orders, bookings, catalog] = await Promise.all([
+    const [orders, bookings, confirmedBookings, catalog, packages] = await Promise.all([
       fetchOrders(),
       fetchBookings(),
-      fetchCatalog()
+      fetchConfirmedBookings(),
+      fetchCatalog(),
+      fetchPackages()
     ]);
-    setData({ orders, bookings, catalog, isLoading: false });
+    setData({ orders, bookings, confirmedBookings, catalog, packages, isLoading: false });
+  };
+
+  // Helper to get package price
+  const getPackagePrice = (selectedPackageId?: string) => {
+    if (!selectedPackageId) return 0;
+    const pkg = data.packages.find(p => p.id === selectedPackageId);
+    return pkg ? pkg.price : 0;
   };
 
   if (data.isLoading) {
@@ -47,21 +58,64 @@ const AdminDashboard: React.FC<DashboardProps> = ({ user }) => {
     );
   }
 
-  // Calculate Stats
-  const totalRevenue = data.orders.reduce((acc, curr) => acc + curr.totalAmount, 0);
-  const totalDP = data.orders.reduce((acc, curr) => acc + (curr.dpAmount || 0), 0);
+  // Calculate Stats - Include both orders and confirmed bookings
+  const totalRevenue = data.orders.reduce((acc, o) => acc + o.totalAmount, 0) + 
+    data.confirmedBookings.reduce((acc, b) => acc + (b.packagePrice || getPackagePrice(b.selectedPackage)), 0);
+  const totalPaid = data.orders.reduce((acc, o) => acc + (o.dpAmount || 0), 0) + 
+    data.confirmedBookings.reduce((acc, b) => acc + calculateTotalPaid(b.payments), 0);
   const pendingBookings = data.bookings.filter(b => b.status === 'Pending').length;
   const lowStock = data.catalog.filter(i => i.stock < 2).length;
 
   const cards = [
     { label: 'Total Sales', value: `Rp ${(totalRevenue / 1000000).toFixed(1)}M`, icon: TrendingUp, color: 'text-green-600', bg: 'bg-green-50' },
-    { label: 'Payment (DP)', value: `Rp ${(totalDP / 1000000).toFixed(1)}M`, icon: CreditCard, color: 'text-blue-600', bg: 'bg-blue-50' },
+    { label: 'Payment (DP)', value: `Rp ${(totalPaid / 1000000).toFixed(1)}M`, icon: CreditCard, color: 'text-blue-600', bg: 'bg-blue-50' },
     { label: 'New Requests', value: pendingBookings, icon: Calendar, color: 'text-amber-600', bg: 'bg-amber-50' },
     { label: 'Low Stock', value: lowStock, icon: Box, color: 'text-red-600', bg: 'bg-red-50' },
   ];
 
-  const recentOrders = data.orders.slice(0, 5);
-  const upcomingBookings = data.bookings.filter(b => b.status === 'Confirmed').slice(0, 5);
+  // Create combined display items for recent transactions (orders + confirmed bookings)
+  interface DisplayItem {
+    id: string;
+    type: 'order' | 'booking';
+    clientName: string;
+    totalAmount: number;
+    paidAmount: number;
+    paymentStatus: 'Unpaid' | 'Partial' | 'Paid';
+    date: string;
+  }
+
+  const getPackageName = (selectedPackageId?: string) => {
+    if (!selectedPackageId) return 'Makeup Service';
+    const pkg = data.packages.find(p => p.id === selectedPackageId);
+    return pkg ? pkg.name : 'Makeup Service';
+  };
+
+  const allTransactions: DisplayItem[] = [
+    ...data.orders.map(order => ({
+      id: order.id,
+      type: 'order' as const,
+      clientName: order.clientName,
+      totalAmount: order.totalAmount,
+      paidAmount: order.dpAmount || 0,
+      paymentStatus: order.paymentStatus,
+      date: order.createdAt
+    })),
+    ...data.confirmedBookings.map(booking => {
+      const packagePrice = booking.packagePrice || getPackagePrice(booking.selectedPackage);
+      return {
+        id: booking.id,
+        type: 'booking' as const,
+        clientName: booking.clientName,
+        totalAmount: packagePrice,
+        paidAmount: calculateTotalPaid(booking.payments),
+        paymentStatus: getPaymentStatus(packagePrice, booking.payments),
+        date: booking.date
+      };
+    })
+  ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+  const recentTransactions = allTransactions.slice(0, 5);
+  const upcomingBookings = data.confirmedBookings.slice(0, 5);
 
   return (
     <div className="space-y-10">
@@ -77,8 +131,6 @@ const AdminDashboard: React.FC<DashboardProps> = ({ user }) => {
           <RefreshCw size={20} />
         </button>
       </header>
-
-      <GlobalSeeder />
 
       {/* Hero Stats - MASTER ONLY */}
       {user?.role === 'ADMIN_MASTER' && (
@@ -100,6 +152,39 @@ const AdminDashboard: React.FC<DashboardProps> = ({ user }) => {
         </div>
       )}
 
+      {/* For ADMIN_FITTING - Show Confirmed Bookings prominently */}
+      {user?.role === 'ADMIN_FITTING' && (
+        <div className="bg-zinc-900 p-10 rounded-[2.5rem] shadow-2xl relative overflow-hidden group">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-[#D4AF37] rounded-full -mr-16 -mt-16 opacity-10 group-hover:scale-150 transition-transform duration-700"></div>
+          <div className="relative z-10">
+            <div className="flex items-center gap-3 mb-8">
+              <Sparkles className="text-[#D4AF37]" size={24} />
+              <h3 className="text-2xl font-serif text-white">Jadwal Fitting Terkonfirmasi</h3>
+            </div>
+            <div className="space-y-6">
+              {upcomingBookings.length > 0 ? (
+                upcomingBookings.map((b) => (
+                  <div key={b.id} className="flex gap-4 group">
+                    <div className="w-1 bg-[#D4AF37]/30 rounded-full group-hover:bg-[#D4AF37] transition-all"></div>
+                    <div className="flex-1">
+                      <h4 className="font-bold text-zinc-200 text-sm">{b.clientName}</h4>
+                      <p className="text-[10px] text-zinc-500 font-medium flex items-center gap-2 mt-1">
+                        <Clock size={10} /> {formatDate(b.date, 'id')} • {b.time}
+                      </p>
+                      {b.selectedPackage && (
+                        <p className="text-[10px] text-[#D4AF37] font-medium mt-1">{b.selectedPackage}</p>
+                      )}
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-zinc-500 text-sm italic">Tidak ada jadwal fitting yang terkonfirmasi.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
         {/* Recent Orders - Left - MASTER ONLY */}
         {user?.role === 'ADMIN_MASTER' ? (
@@ -109,24 +194,27 @@ const AdminDashboard: React.FC<DashboardProps> = ({ user }) => {
               <button className="text-xs font-black uppercase tracking-widest text-[#D4AF37] border-b-2 border-[#D4AF37]/20 pb-1">View All</button>
             </div>
             <div className="space-y-6">
-              {recentOrders.map((order) => (
-                <div key={order.id} className="flex items-center justify-between p-5 bg-zinc-50/50 rounded-[1.5rem] border border-zinc-50 hover:bg-white hover:border-[#F0E5D8] transition-all group">
-                  <div className="flex items-center gap-5">
-                    <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-zinc-400 group-hover:bg-[#D4AF37] group-hover:text-white transition-all shadow-sm">
-                      <ShoppingBag size={20} />
+              {recentTransactions.length > 0 ? (
+                recentTransactions.map((item) => (
+                  <div key={`${item.type}-${item.id}`} className="flex items-center justify-between p-5 bg-zinc-50/50 rounded-[1.5rem] border border-zinc-50 hover:bg-white hover:border-[#F0E5D8] transition-all group">
+                    <div className="flex items-center gap-5">
+                      <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-zinc-400 group-hover:bg-[#D4AF37] group-hover:text-white transition-all shadow-sm">
+                        <ShoppingBag size={20} />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-zinc-900">{item.clientName}</h4>
+                        <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest mt-0.5">
+                          {item.paymentStatus} • {item.type === 'booking' ? 'Booking' : 'Order'}
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <h4 className="font-bold text-zinc-900">{order.clientName}</h4>
-                      <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest mt-0.5">{order.paymentStatus}</p>
+                    <div className="text-right">
+                      <p className="font-black text-zinc-900">Rp {(item.totalAmount / 1000).toLocaleString()}k</p>
+                      <p className="text-[10px] text-zinc-400 font-medium">{formatDate(item.date, 'id')}</p>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <p className="font-black text-zinc-900">Rp {(order.totalAmount / 1000).toLocaleString()}k</p>
-                    <p className="text-[10px] text-zinc-400 font-medium">{formatDate(order.createdAt, 'id')}</p>
-                  </div>
-                </div>
-              ))}
-              {recentOrders.length === 0 && (
+                ))
+              ) : (
                 <div className="text-center py-10">
                   <p className="text-zinc-400 italic">No transactions recorded yet.</p>
                 </div>
@@ -141,49 +229,52 @@ const AdminDashboard: React.FC<DashboardProps> = ({ user }) => {
           </div>
         )}
 
-        {/* Schedule Preview - Right */}
-        <div className="lg:col-span-12 xl:col-span-5 space-y-8">
-          <div className="bg-zinc-900 p-10 rounded-[2.5rem] shadow-2xl relative overflow-hidden group">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-[#D4AF37] rounded-full -mr-16 -mt-16 opacity-10 group-hover:scale-150 transition-transform duration-700"></div>
-            <div className="relative z-10">
-              <div className="flex items-center gap-3 mb-8">
-                <Sparkles className="text-[#D4AF37]" size={24} />
-                <h3 className="text-2xl font-serif text-white">Upcoming</h3>
-              </div>
-              <div className="space-y-6">
-                {upcomingBookings.map((b) => (
-                  <div key={b.id} className="flex gap-4 group">
-                    <div className="w-1 bg-[#D4AF37]/30 rounded-full group-hover:bg-[#D4AF37] transition-all"></div>
-                    <div>
-                      <h4 className="font-bold text-zinc-200 text-sm">{b.clientName}</h4>
-                      <p className="text-[10px] text-zinc-500 font-medium flex items-center gap-2 mt-1">
-                        <Clock size={10} /> {formatDate(b.date, 'id')} • {b.time}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-                {upcomingBookings.length === 0 && (
-                  <p className="text-zinc-500 text-sm italic">No upcoming confirmed bookings.</p>
-                )}
+        {/* Schedule Preview - Right - MASTER ONLY */}
+        {user?.role === 'ADMIN_MASTER' && (
+          <div className="lg:col-span-12 xl:col-span-5 space-y-8">
+            <div className="bg-zinc-900 p-10 rounded-[2.5rem] shadow-2xl relative overflow-hidden group">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-[#D4AF37] rounded-full -mr-16 -mt-16 opacity-10 group-hover:scale-150 transition-transform duration-700"></div>
+              <div className="relative z-10">
+                <div className="flex items-center gap-3 mb-8">
+                  <Sparkles className="text-[#D4AF37]" size={24} />
+                  <h3 className="text-2xl font-serif text-white">Upcoming</h3>
+                </div>
+                <div className="space-y-6">
+                  {upcomingBookings.length > 0 ? (
+                    upcomingBookings.map((b) => (
+                      <div key={b.id} className="flex gap-4 group">
+                        <div className="w-1 bg-[#D4AF37]/30 rounded-full group-hover:bg-[#D4AF37] transition-all"></div>
+                        <div>
+                          <h4 className="font-bold text-zinc-200 text-sm">{b.clientName}</h4>
+                          <p className="text-[10px] text-zinc-500 font-medium flex items-center gap-2 mt-1">
+                            <Clock size={10} /> {formatDate(b.date, 'id')} • {b.time}
+                          </p>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-zinc-500 text-sm italic">No upcoming confirmed bookings.</p>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
 
-          <div className="bg-[#D4AF37]/5 p-10 rounded-[2.5rem] border border-[#D4AF37]/10 flex flex-col items-center text-center">
-             <div className="w-16 h-16 bg-white rounded-3xl flex items-center justify-center text-[#D4AF37] shadow-lg mb-6">
-                <Users size={32} />
-             </div>
-             <h4 className="text-xl font-serif text-zinc-900 mb-2">Team Sync</h4>
-             <p className="text-zinc-500 text-sm mb-6">Semua member tim aktif dan siap melayani pelanggan.</p>
-             <div className="flex -space-x-3">
-                {[1,2,3,4].map(i => (
-                  <div key={i} className="w-10 h-10 rounded-full border-4 border-white bg-zinc-200 overflow-hidden shadow-sm">
-                    <img src={`https://i.pravatar.cc/100?u=${i}`} alt="team" />
-                  </div>
-                ))}
-             </div>
+            <div className="bg-[#D4AF37]/5 p-10 rounded-[2.5rem] border border-[#D4AF37]/10 flex flex-col items-center text-center">
+               <div className="w-16 h-16 bg-white rounded-3xl flex items-center justify-center text-[#D4AF37] shadow-lg mb-6">
+                  <Users size={32} />
+               </div>
+               <h4 className="text-xl font-serif text-zinc-900 mb-2">Team Sync</h4>
+               <p className="text-zinc-500 text-sm mb-6">Semua member tim aktif dan siap melayani pelanggan.</p>
+               <div className="flex -space-x-3">
+                  {[1,2,3,4].map(i => (
+                    <div key={i} className="w-10 h-10 rounded-full border-4 border-white bg-zinc-200 overflow-hidden shadow-sm">
+                      <img src={`https://i.pravatar.cc/100?u=${i}`} alt="team" />
+                    </div>
+                  ))}
+               </div>
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

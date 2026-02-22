@@ -16,6 +16,7 @@ import Footer from './components/navigation/Footer';
 import AdminLayout from './components/layout/AdminLayout';
 import ScrollToTop from './components/navigation/ScrollToTop';
 import { GlobalSeeder } from './components/GlobalSeeder';
+import { ToastProvider } from './components/Toast';
 
 // Lazy Loaded Pages for Performance
 const PublicHome = lazy(() => import('./pages/PublicHome'));
@@ -108,60 +109,62 @@ const App: React.FC = () => {
   const publicProps = { lang, siteContent };
 
   return (
-    <HashRouter>
-      <ScrollToTop />
-      <Suspense fallback={<PageLoader />}>
-        <Routes>
-          {/* Auth Route */}
-          <Route path="/login" element={<Login onLoginSuccess={setCurrentUser} />} />
+    <ToastProvider>
+      <HashRouter>
+        <ScrollToTop />
+        <Suspense fallback={<PageLoader />}>
+          <Routes>
+            {/* Auth Route */}
+            <Route path="/login" element={<Login onLoginSuccess={setCurrentUser} />} />
 
-          {/* Public Routes */}
-          <Route path="/" element={
-            <>
-              <Navbar siteContent={siteContent} currentUser={currentUser} isMenuOpen={isMenuOpen} setIsMenuOpen={setIsMenuOpen} lang={lang} setLang={setLang} />
-              <PublicHome siteContent={siteContent} team={team} lang={lang} />
-              <Footer siteContent={siteContent} lang={lang} />
-            </>
-          } />
-          
-          <Route path="/catalog" element={
-            <>
-              <Navbar siteContent={siteContent} currentUser={currentUser} isMenuOpen={isMenuOpen} setIsMenuOpen={setIsMenuOpen} lang={lang} setLang={setLang} />
-              <PublicCatalog siteContent={siteContent} lang={lang} />
-              <Footer siteContent={siteContent} lang={lang} />
-            </>
-          } />
+            {/* Public Routes */}
+            <Route path="/" element={
+              <>
+                <Navbar siteContent={siteContent} currentUser={currentUser} isMenuOpen={isMenuOpen} setIsMenuOpen={setIsMenuOpen} lang={lang} setLang={setLang} />
+                <PublicHome siteContent={siteContent} team={team} lang={lang} />
+                <Footer siteContent={siteContent} lang={lang} />
+              </>
+            } />
+            
+            <Route path="/catalog" element={
+              <>
+                <Navbar siteContent={siteContent} currentUser={currentUser} isMenuOpen={isMenuOpen} setIsMenuOpen={setIsMenuOpen} lang={lang} setLang={setLang} />
+                <PublicCatalog siteContent={siteContent} lang={lang} />
+                <Footer siteContent={siteContent} lang={lang} />
+              </>
+            } />
 
-          <Route path="/booking" element={
-            <>
-              <Navbar siteContent={siteContent} currentUser={currentUser} isMenuOpen={isMenuOpen} setIsMenuOpen={setIsMenuOpen} lang={lang} setLang={setLang} />
-              <PublicBooking lang={lang} />
-              <Footer siteContent={siteContent} lang={lang} />
-            </>
-          } />
+            <Route path="/booking" element={
+              <>
+                <Navbar siteContent={siteContent} currentUser={currentUser} isMenuOpen={isMenuOpen} setIsMenuOpen={setIsMenuOpen} lang={lang} setLang={setLang} />
+                <PublicBooking lang={lang} />
+                <Footer siteContent={siteContent} lang={lang} />
+              </>
+            } />
 
-          <Route path="/packages" element={
-            <>
-              <Navbar siteContent={siteContent} currentUser={currentUser} isMenuOpen={isMenuOpen} setIsMenuOpen={setIsMenuOpen} lang={lang} setLang={setLang} />
-              <PublicPackages lang={lang} />
-              <Footer siteContent={siteContent} lang={lang} />
-            </>
-          } />
+            <Route path="/packages" element={
+              <>
+                <Navbar siteContent={siteContent} currentUser={currentUser} isMenuOpen={isMenuOpen} setIsMenuOpen={setIsMenuOpen} lang={lang} setLang={setLang} />
+                <PublicPackages lang={lang} />
+                <Footer siteContent={siteContent} lang={lang} />
+              </>
+            } />
 
-          {/* Admin Routes */}
-          <Route path="/admin" element={currentUser ? <AdminLayout currentUser={currentUser} logout={logout}><AdminDashboard user={currentUser} /></AdminLayout> : <Navigate to="/" />} />
-          <Route path="/admin/orders" element={currentUser?.role === 'ADMIN_MASTER' ? <AdminLayout currentUser={currentUser} logout={logout}><AdminOrders /></AdminLayout> : <Navigate to="/" />} />
-          <Route path="/admin/schedule" element={currentUser ? <AdminLayout currentUser={currentUser} logout={logout}><AdminSchedule /></AdminLayout> : <Navigate to="/" />} />
-          <Route path="/admin/inventory" element={currentUser ? <AdminLayout currentUser={currentUser} logout={logout}><AdminInventory /></AdminLayout> : <Navigate to="/" />} />
-          <Route path="/admin/packages" element={currentUser ? <AdminLayout currentUser={currentUser} logout={logout}><AdminPackages /></AdminLayout> : <Navigate to="/" />} />
-          <Route path="/admin/team" element={currentUser ? <AdminLayout currentUser={currentUser} logout={logout}><AdminTeam /></AdminLayout> : <Navigate to="/admin" />} />
-          <Route path="/admin/settings" element={currentUser ? <AdminLayout currentUser={currentUser} logout={logout}><AdminSettings user={currentUser} /></AdminLayout> : <Navigate to="/" />} />
-          
-          {/* Seeder - development only */}
-          {import.meta.env.DEV && <Route path="/seed" element={<GlobalSeeder />} />}
-        </Routes>
-      </Suspense>
-    </HashRouter>
+            {/* Admin Routes */}
+            <Route path="/admin" element={currentUser ? <AdminLayout currentUser={currentUser} logout={logout}><AdminDashboard user={currentUser} /></AdminLayout> : <Navigate to="/" />} />
+            <Route path="/admin/orders" element={currentUser?.role === 'ADMIN_MASTER' ? <AdminLayout currentUser={currentUser} logout={logout}><AdminOrders user={currentUser} /></AdminLayout> : <Navigate to="/" />} />
+            <Route path="/admin/schedule" element={currentUser ? <AdminLayout currentUser={currentUser} logout={logout}><AdminSchedule user={currentUser} /></AdminLayout> : <Navigate to="/" />} />
+            <Route path="/admin/inventory" element={currentUser ? <AdminLayout currentUser={currentUser} logout={logout}><AdminInventory /></AdminLayout> : <Navigate to="/" />} />
+            <Route path="/admin/packages" element={currentUser ? <AdminLayout currentUser={currentUser} logout={logout}><AdminPackages /></AdminLayout> : <Navigate to="/" />} />
+            <Route path="/admin/team" element={currentUser ? <AdminLayout currentUser={currentUser} logout={logout}><AdminTeam /></AdminLayout> : <Navigate to="/admin" />} />
+            <Route path="/admin/settings" element={currentUser ? <AdminLayout currentUser={currentUser} logout={logout}><AdminSettings user={currentUser} /></AdminLayout> : <Navigate to="/" />} />
+            
+            {/* Seeder - development only */}
+            {import.meta.env.DEV && <Route path="/seed" element={<GlobalSeeder />} />}
+          </Routes>
+        </Suspense>
+      </HashRouter>
+    </ToastProvider>
   );
 };
 

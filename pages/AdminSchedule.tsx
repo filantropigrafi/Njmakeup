@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar as CalendarIcon, Clock, RefreshCw, User, Phone, MessageSquare, Trash2, CheckCircle2, XCircle, Sparkles, X, MapPin, Instagram, Save, DollarSign, Plus, CreditCard, Edit, FileText } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, RefreshCw, User, Phone, MessageSquare, Trash2, CheckCircle2, XCircle, Sparkles, X, MapPin, Instagram, Save, DollarSign, Plus, CreditCard, Edit, FileText, UserCheck } from 'lucide-react';
 import { 
   fetchBookings, 
   updateBookingStatus, 
@@ -13,10 +13,14 @@ import {
 } from '../services/bookingService';
 import { fetchPackages } from '../services/packageService';
 import { formatDate } from '../services/whatsappService';
-import { Booking, Package, Payment } from '../types';
+import { Booking, Package, Payment, User as UserType } from '../types';
 import InvoicePreview from '../components/InvoicePreview';
 
-const AdminSchedule: React.FC = () => {
+interface AdminScheduleProps {
+  user: UserType | null;
+}
+
+const AdminSchedule: React.FC<AdminScheduleProps> = ({ user }) => {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [packages, setPackages] = useState<Package[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -29,6 +33,8 @@ const AdminSchedule: React.FC = () => {
   const [newNote, setNewNote] = useState('');
   const [isSavingNote, setIsSavingNote] = useState(false);
   const [isSavingPayment, setIsSavingPayment] = useState(false);
+  const [isEditingNotes, setIsEditingNotes] = useState(false);
+  const [editedNotes, setEditedNotes] = useState('');
   
   // Payment form state
   const [paymentForm, setPaymentForm] = useState({
@@ -82,6 +88,7 @@ const AdminSchedule: React.FC = () => {
   const handleCardClick = (booking: Booking) => {
     setSelectedBooking(booking);
     setNewNote('');
+    setIsEditingNotes(false);
     setShowDetailModal(true);
   };
 
@@ -132,11 +139,12 @@ const AdminSchedule: React.FC = () => {
   };
 
   const handleStatusChange = async (id: string, status: Booking['status']) => {
-    const success = await updateBookingStatus(id, status);
+    const userName = user?.name || 'Admin';
+    const success = await updateBookingStatus(id, status, userName);
     if (success) {
       await loadData();
       if (selectedBooking) {
-        setSelectedBooking(prev => prev ? { ...prev, status } : null);
+        setSelectedBooking(prev => prev ? { ...prev, status, lastUpdatedBy: userName } : null);
       }
     }
   };
@@ -145,15 +153,61 @@ const AdminSchedule: React.FC = () => {
     if (!selectedBooking || !newNote.trim()) return;
     
     setIsSavingNote(true);
-    const success = await addNoteToBooking(selectedBooking.id, newNote.trim());
+    const userName = user?.name || 'Admin';
+    const success = await addNoteToBooking(selectedBooking.id, newNote.trim(), userName);
     if (success) {
       await loadData();
       const timestamp = new Date().toLocaleString('id-ID');
       const updatedNotes = selectedBooking.notes 
-        ? `${selectedBooking.notes}\n\n[${timestamp}]\n${newNote.trim()}`
-        : `[${timestamp}]\n${newNote.trim()}`;
-      setSelectedBooking(prev => prev ? { ...prev, notes: updatedNotes } : null);
+        ? `${selectedBooking.notes}\n\n[${timestamp}] - ${userName}\n${newNote.trim()}`
+        : `[${timestamp}] - ${userName}\n${newNote.trim()}`;
+      setSelectedBooking(prev => prev ? { ...prev, notes: updatedNotes, lastUpdatedBy: userName } : null);
       setNewNote('');
+    }
+    setIsSavingNote(false);
+  };
+
+  const handleEditNotes = () => {
+    if (!selectedBooking) return;
+    setEditedNotes(selectedBooking.notes || '');
+    setIsEditingNotes(true);
+  };
+
+  const handleSaveEditedNotes = async () => {
+    if (!selectedBooking) return;
+    
+    setIsSavingNote(true);
+    const userName = user?.name || 'Admin';
+    
+    const success = await updateBooking(selectedBooking.id, {
+      notes: editedNotes.trim(),
+      lastUpdatedBy: userName
+    });
+    
+    if (success) {
+      await loadData();
+      setSelectedBooking(prev => prev ? { ...prev, notes: editedNotes.trim(), lastUpdatedBy: userName } : null);
+      setIsEditingNotes(false);
+    }
+    setIsSavingNote(false);
+  };
+
+  const handleDeleteNotes = async () => {
+    if (!selectedBooking) return;
+    
+    if (!window.confirm('Hapus semua catatan? Tindakan ini tidak dapat dibatalkan.')) return;
+    
+    setIsSavingNote(true);
+    const userName = user?.name || 'Admin';
+    
+    const success = await updateBooking(selectedBooking.id, {
+      notes: '',
+      lastUpdatedBy: userName
+    });
+    
+    if (success) {
+      await loadData();
+      setSelectedBooking(prev => prev ? { ...prev, notes: '', lastUpdatedBy: userName } : null);
     }
     setIsSavingNote(false);
   };
@@ -635,35 +689,98 @@ const AdminSchedule: React.FC = () => {
                 </div>
               )}
 
-              {/* Existing Notes */}
-              {selectedBooking.notes && (
+              {/* Existing Notes - View Mode */}
+              {selectedBooking.notes && !isEditingNotes && (
                 <div className="bg-amber-50 rounded-xl p-4 space-y-2">
-                  <h3 className="text-[10px] font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1">
-                    <MessageSquare size={12} /> Catatan
-                  </h3>
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-[10px] font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1">
+                      <MessageSquare size={12} /> Catatan
+                    </h3>
+                    <div className="flex gap-1">
+                      <button 
+                        onClick={handleEditNotes} 
+                        className="text-[10px] text-blue-600 font-bold px-2 py-1 rounded hover:bg-blue-100 transition-all"
+                      >
+                        <Edit size={12} />
+                      </button>
+                      <button 
+                        onClick={handleDeleteNotes} 
+                        className="text-[10px] text-red-600 font-bold px-2 py-1 rounded hover:bg-red-100 transition-all"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  </div>
                   <div className="text-sm text-amber-900 whitespace-pre-wrap">{selectedBooking.notes}</div>
                 </div>
               )}
 
-              {/* Add New Note */}
-              <div className="bg-zinc-50 rounded-xl p-4 space-y-3">
-                <h3 className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Tambah Catatan</h3>
-                <textarea 
-                  value={newNote}
-                  onChange={(e) => setNewNote(e.target.value)}
-                  className="w-full px-3 py-2.5 bg-white border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900/10 resize-none"
-                  placeholder="Tulis catatan baru..."
-                  rows={2}
-                />
-                <button 
-                  onClick={handleAddNote}
-                  disabled={!newNote.trim() || isSavingNote}
-                  className="w-full py-2 bg-zinc-900 text-white rounded-lg font-bold text-sm flex items-center justify-center gap-2 hover:bg-zinc-800 transition-all disabled:opacity-50"
-                >
-                  {isSavingNote ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />}
-                  Simpan Catatan
-                </button>
-              </div>
+              {/* Edit Notes Mode */}
+              {isEditingNotes && (
+                <div className="bg-blue-50 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-[10px] font-bold text-blue-400 uppercase tracking-wider flex items-center gap-1">
+                      <Edit size={12} /> Edit Catatan
+                    </h3>
+                    <button 
+                      onClick={() => setIsEditingNotes(false)} 
+                      className="text-[10px] text-zinc-500 font-bold px-2 py-1 rounded hover:bg-zinc-100 transition-all"
+                    >
+                      Batal
+                    </button>
+                  </div>
+                  <textarea 
+                    value={editedNotes}
+                    onChange={(e) => setEditedNotes(e.target.value)}
+                    className="w-full px-3 py-2.5 bg-white border border-blue-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
+                    placeholder="Edit catatan..."
+                    rows={4}
+                  />
+                  <button 
+                    onClick={handleSaveEditedNotes}
+                    disabled={isSavingNote}
+                    className="w-full py-2 bg-blue-600 text-white rounded-lg font-bold text-sm flex items-center justify-center gap-2 hover:bg-blue-700 transition-all disabled:opacity-50"
+                  >
+                    {isSavingNote ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />}
+                    Simpan Perubahan
+                  </button>
+                </div>
+              )}
+
+              {/* Last Updated By */}
+              {selectedBooking.lastUpdatedBy && (
+                <div className="bg-green-50 rounded-xl p-4 flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center">
+                    <UserCheck size={14} className="text-green-600" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-green-500 uppercase tracking-wider font-bold">Terakhir diperbarui oleh</p>
+                    <p className="text-sm font-bold text-green-700">{selectedBooking.lastUpdatedBy}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Add New Note - Only show when not editing */}
+              {!isEditingNotes && (
+                <div className="bg-zinc-50 rounded-xl p-4 space-y-3">
+                  <h3 className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Tambah Catatan</h3>
+                  <textarea 
+                    value={newNote}
+                    onChange={(e) => setNewNote(e.target.value)}
+                    className="w-full px-3 py-2.5 bg-white border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900/10 resize-none"
+                    placeholder="Tulis catatan baru..."
+                    rows={2}
+                  />
+                  <button 
+                    onClick={handleAddNote}
+                    disabled={!newNote.trim() || isSavingNote}
+                    className="w-full py-2 bg-zinc-900 text-white rounded-lg font-bold text-sm flex items-center justify-center gap-2 hover:bg-zinc-800 transition-all disabled:opacity-50"
+                  >
+                    {isSavingNote ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />}
+                    Simpan Catatan
+                  </button>
+                </div>
+              )}
 
               {/* Quick Status Actions */}
               <div className="space-y-2">

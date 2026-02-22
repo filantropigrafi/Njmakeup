@@ -68,10 +68,14 @@ export const addBooking = async (booking: Omit<Booking, 'id'>, lang: 'id' | 'en'
   }
 };
 
-export const updateBookingStatus = async (id: string, status: Booking['status']): Promise<boolean> => {
+export const updateBookingStatus = async (id: string, status: Booking['status'], lastUpdatedBy?: string): Promise<boolean> => {
   try {
     const docRef = doc(db, COLLECTION_NAME, id);
-    await updateDoc(docRef, { status });
+    const updateData: Partial<Booking> = { status };
+    if (lastUpdatedBy) {
+      updateData.lastUpdatedBy = lastUpdatedBy;
+    }
+    await updateDoc(docRef, updateData);
     return true;
   } catch (error) {
     console.error("Error updating booking status:", error);
@@ -200,22 +204,29 @@ export const removePaymentFromBooking = async (bookingId: string, paymentId: str
 };
 
 // Add note to booking
-export const addNoteToBooking = async (bookingId: string, note: string): Promise<boolean> => {
+export const addNoteToBooking = async (bookingId: string, note: string, userName?: string): Promise<boolean> => {
   try {
     const booking = await fetchBookingById(bookingId);
     if (!booking) return false;
 
     const timestamp = new Date().toLocaleString('id-ID');
     const existingNotes = booking.notes || '';
-    const updatedNotes = existingNotes 
-      ? `${existingNotes}\n\n[${timestamp}]\n${note}`
+    const noteWithUser = userName 
+      ? `[${timestamp}] - ${userName}\n${note}`
       : `[${timestamp}]\n${note}`;
+    const updatedNotes = existingNotes 
+      ? `${existingNotes}\n\n${noteWithUser}`
+      : noteWithUser;
 
     const docRef = doc(db, COLLECTION_NAME, bookingId);
-    await updateDoc(docRef, {
+    const updateData: Record<string, unknown> = {
       notes: updatedNotes,
       updatedAt: new Date().toISOString()
-    });
+    };
+    if (userName) {
+      updateData.lastUpdatedBy = userName;
+    }
+    await updateDoc(docRef, updateData);
 
     return true;
   } catch (error) {

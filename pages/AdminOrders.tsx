@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Plus, User, Phone, DollarSign, Tag, RefreshCw, Trash2, CheckCircle2, AlertCircle, X, Calendar, FileText, MessageSquare, Save, Sparkles, CreditCard } from 'lucide-react';
+import { Search, Plus, User, Phone, DollarSign, Tag, RefreshCw, Trash2, CheckCircle2, AlertCircle, X, Calendar, FileText, MessageSquare, Save, Sparkles, CreditCard, UserCheck, Edit } from 'lucide-react';
 import { fetchOrders, addOrder, updateOrder, updateOrderStatus, deleteOrder } from '../services/orderService';
 import { fetchConfirmedBookings, calculateTotalPaid, getPaymentStatus } from '../services/bookingService';
 import { fetchPackages } from '../services/packageService';
 import { formatDate } from '../services/whatsappService';
-import { Order, Booking, Package } from '../types';
+import { Order, Booking, Package, User as UserType } from '../types';
 
 // Interface for combined display item
 interface OrderDisplayItem {
@@ -18,10 +18,15 @@ interface OrderDisplayItem {
   date: string;
   items: string[];
   notes?: string;
+  lastUpdatedBy?: string;
   originalData: Order | Booking;
 }
 
-const AdminOrders: React.FC = () => {
+interface AdminOrdersProps {
+  user: UserType | null;
+}
+
+const AdminOrders: React.FC<AdminOrdersProps> = ({ user }) => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [confirmedBookings, setConfirmedBookings] = useState<Booking[]>([]);
   const [packages, setPackages] = useState<Package[]>([]);
@@ -34,6 +39,8 @@ const AdminOrders: React.FC = () => {
   const [newNote, setNewNote] = useState('');
   const [isSavingNote, setIsSavingNote] = useState(false);
   const [viewMode, setViewMode] = useState<'all' | 'orders' | 'bookings'>('all');
+  const [isEditingNotes, setIsEditingNotes] = useState(false);
+  const [editedNotes, setEditedNotes] = useState('');
   
   // New Order Form State
   const [formData, setFormData] = useState({
@@ -101,7 +108,68 @@ const AdminOrders: React.FC = () => {
   const handleCardClick = (item: OrderDisplayItem) => {
     setSelectedItem(item);
     setNewNote('');
+    setIsEditingNotes(false);
+    setEditedNotes('');
     setShowDetailModal(true);
+  };
+
+  const handleEditNotes = () => {
+    if (!selectedItem) return;
+    setEditedNotes(selectedItem.notes || '');
+    setIsEditingNotes(true);
+  };
+
+  const handleSaveEditedNotes = async () => {
+    if (!selectedItem || selectedItem.type !== 'order') return;
+    
+    setIsSavingNote(true);
+    const order = selectedItem.originalData as Order;
+    const userName = user?.name || 'Admin';
+    
+    const success = await updateOrder(selectedItem.id, {
+      clientName: order.clientName,
+      clientPhone: order.clientPhone,
+      totalAmount: order.totalAmount,
+      dpAmount: order.dpAmount || 0,
+      paymentStatus: order.paymentStatus,
+      items: order.items,
+      notes: editedNotes.trim(),
+      lastUpdatedBy: userName
+    });
+    
+    if (success) {
+      await loadData();
+      setSelectedItem(prev => prev ? { ...prev, notes: editedNotes.trim(), lastUpdatedBy: userName } : null);
+      setIsEditingNotes(false);
+    }
+    setIsSavingNote(false);
+  };
+
+  const handleDeleteNotes = async () => {
+    if (!selectedItem || selectedItem.type !== 'order') return;
+    
+    if (!window.confirm('Hapus semua catatan? Tindakan ini tidak dapat dibatalkan.')) return;
+    
+    setIsSavingNote(true);
+    const order = selectedItem.originalData as Order;
+    const userName = user?.name || 'Admin';
+    
+    const success = await updateOrder(selectedItem.id, {
+      clientName: order.clientName,
+      clientPhone: order.clientPhone,
+      totalAmount: order.totalAmount,
+      dpAmount: order.dpAmount || 0,
+      paymentStatus: order.paymentStatus,
+      items: order.items,
+      notes: '',
+      lastUpdatedBy: userName
+    });
+    
+    if (success) {
+      await loadData();
+      setSelectedItem(prev => prev ? { ...prev, notes: '', lastUpdatedBy: userName } : null);
+    }
+    setIsSavingNote(false);
   };
 
   const handleAddNote = async () => {
@@ -111,9 +179,10 @@ const AdminOrders: React.FC = () => {
     const order = selectedItem.originalData as Order;
     const existingNotes = order.notes || '';
     const timestamp = new Date().toLocaleString('id-ID');
+    const userName = user?.name || 'Admin';
     const updatedNotes = existingNotes 
-      ? `${existingNotes}\n\n[${timestamp}]\n${newNote.trim()}`
-      : `[${timestamp}]\n${newNote.trim()}`;
+      ? `${existingNotes}\n\n[${timestamp}] - ${userName}\n${newNote.trim()}`
+      : `[${timestamp}] - ${userName}\n${newNote.trim()}`;
     
     const success = await updateOrder(selectedItem.id, {
       clientName: order.clientName,
@@ -122,23 +191,25 @@ const AdminOrders: React.FC = () => {
       dpAmount: order.dpAmount || 0,
       paymentStatus: order.paymentStatus,
       items: order.items,
-      notes: updatedNotes
+      notes: updatedNotes,
+      lastUpdatedBy: userName
     });
     
     if (success) {
       await loadData();
-      setSelectedItem(prev => prev ? { ...prev, notes: updatedNotes } : null);
+      setSelectedItem(prev => prev ? { ...prev, notes: updatedNotes, lastUpdatedBy: userName } : null);
       setNewNote('');
     }
     setIsSavingNote(false);
   };
 
   const handleUpdateStatus = async (id: string, status: Order['paymentStatus']) => {
-    const success = await updateOrderStatus(id, { paymentStatus: status });
+    const userName = user?.name || 'Admin';
+    const success = await updateOrderStatus(id, { paymentStatus: status, lastUpdatedBy: userName });
     if (success) {
       await loadData();
       if (selectedItem && selectedItem.type === 'order') {
-        setSelectedItem(prev => prev ? { ...prev, paymentStatus: status } : null);
+        setSelectedItem(prev => prev ? { ...prev, paymentStatus: status, lastUpdatedBy: userName } : null);
       }
     }
   };
@@ -167,6 +238,7 @@ const AdminOrders: React.FC = () => {
       date: order.createdAt,
       items: order.items,
       notes: order.notes,
+      lastUpdatedBy: order.lastUpdatedBy,
       originalData: order
     }));
 
@@ -601,17 +673,79 @@ const AdminOrders: React.FC = () => {
               </div>
 
               {/* Existing Notes */}
-              {selectedItem.notes && (
+              {selectedItem.notes && !isEditingNotes && (
                 <div className="bg-blue-50 rounded-xl p-4 space-y-2">
-                  <h3 className="text-[10px] font-bold text-blue-400 uppercase tracking-wider flex items-center gap-1">
-                    <MessageSquare size={12} /> Catatan
-                  </h3>
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-[10px] font-bold text-blue-400 uppercase tracking-wider flex items-center gap-1">
+                      <MessageSquare size={12} /> Catatan
+                    </h3>
+                    {selectedItem.type === 'order' && (
+                      <div className="flex gap-1">
+                        <button 
+                          onClick={handleEditNotes}
+                          className="text-[10px] text-blue-600 font-bold px-2 py-1 rounded hover:bg-blue-100 transition-all"
+                        >
+                          <Edit size={12} />
+                        </button>
+                        <button 
+                          onClick={handleDeleteNotes}
+                          className="text-[10px] text-red-600 font-bold px-2 py-1 rounded hover:bg-red-100 transition-all"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
                   <div className="text-sm text-blue-900 whitespace-pre-wrap">{selectedItem.notes}</div>
                 </div>
               )}
 
+              {/* Edit Notes Mode */}
+              {isEditingNotes && selectedItem.type === 'order' && (
+                <div className="bg-blue-50 rounded-xl p-4 space-y-3">
+                  <h3 className="text-[10px] font-bold text-blue-400 uppercase tracking-wider flex items-center gap-1">
+                    <Edit size={12} /> Edit Catatan
+                  </h3>
+                  <textarea 
+                    value={editedNotes}
+                    onChange={(e) => setEditedNotes(e.target.value)}
+                    className="w-full px-3 py-2.5 bg-white border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900/10 resize-none"
+                    rows={4}
+                  />
+                  <div className="flex gap-2">
+                    <button 
+                      onClick={() => setIsEditingNotes(false)}
+                      className="flex-1 py-2 bg-zinc-200 text-zinc-700 rounded-lg font-bold text-sm hover:bg-zinc-300 transition-all"
+                    >
+                      Batal
+                    </button>
+                    <button 
+                      onClick={handleSaveEditedNotes}
+                      disabled={isSavingNote}
+                      className="flex-1 py-2 bg-blue-600 text-white rounded-lg font-bold text-sm flex items-center justify-center gap-2 hover:bg-blue-700 transition-all disabled:opacity-50"
+                    >
+                      {isSavingNote ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />}
+                      Simpan
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Last Updated By */}
+              {selectedItem.lastUpdatedBy && selectedItem.type === 'order' && (
+                <div className="bg-green-50 rounded-xl p-4 flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center">
+                    <UserCheck size={14} className="text-green-600" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-green-500 uppercase tracking-wider font-bold">Terakhir diperbarui oleh</p>
+                    <p className="text-sm font-bold text-green-700">{selectedItem.lastUpdatedBy}</p>
+                  </div>
+                </div>
+              )}
+
               {/* Add New Note - Only for manual orders */}
-              {selectedItem.type === 'order' && (
+              {selectedItem.type === 'order' && !isEditingNotes && (
                 <div className="bg-zinc-50 rounded-xl p-4 space-y-3">
                   <h3 className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Tambah Catatan Baru</h3>
                   <textarea 

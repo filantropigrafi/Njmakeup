@@ -42,7 +42,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
 
       const appUser: AppUser = {
         id: fbUser.uid,
-        name: role === 'ADMIN_MASTER' ? 'Natasya (Owner)' : 'Staff Fitting',
+        name: role === 'ADMIN_MASTER' ? 'NIA JESSICA (Owner)' : 'Staff Fitting',
         email: userEmail,
         role
       };
